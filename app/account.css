@@ -1,0 +1,39 @@
+.account-button{display:inline-flex;align-items:center;gap:7px;border:1px solid #dce5d7;background:#f2f6ed;color:var(--green);border-radius:7px;padding:8px 11px;font-size:11px;font-weight:600;white-space:nowrap}
+.sidebar .profile{width:100%;text-align:left;justify-content:flex-start;border-radius:0;white-space:normal}
+.profile span{overflow-wrap:anywhere}
+.account-summary{display:flex;flex-direction:column;gap:10px;background:#f5f8f1;border:1px solid #e1e9d9;border-radius:10px;padding:21px;margin:24px 0;overflow-wrap:anywhere}
+.account-status{display:flex;align-items:center;gap:6px;color:var(--green);font-size:11px;font-weight:600}
+.account-summary strong{font-size:17px;color:var(--ink)}
+.account-summary p{font-size:12px;color:#6d7c6a;line-height:1.6}
+.account-description{font-size:12px;line-height:1.9;color:#687563;margin:20px 0}
+.account-content .dialog-actions a{display:inline-flex;align-items:center;justify-content:center;gap:7px}
+.error-banner a{margin-left:auto;text-decoration:underline;font-weight:600;white-space:nowrap}
+main.login-page{width:100%;max-width:none;min-height:100svh;margin:0;display:grid;place-items:center;padding:32px 18px;background:radial-gradient(ellipse at top,#eaf0e3,transparent 65%),var(--bg)}
+.login-card{width:100%;max-width:470px;background:#fff;border:1px solid var(--line);border-radius:18px;padding:38px;box-shadow:0 12px 50px #234b3e0a}
+.login-card .brand{margin:0 0 36px}
+.login-icon{display:grid;place-items:center;width:60px;height:60px;border-radius:16px;background:#eff4e9;color:var(--green);margin-bottom:24px}
+.login-card h1{font-size:25px;line-height:1.5;letter-spacing:-1px}
+.login-description{font-size:12px;line-height:1.95;color:#798674;margin:14px 0 24px}
+.login-action{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;min-height:46px;font-size:12px;margin-top:10px}
+.login-note{font-size:10px;line-height:1.9;color:#8a9583;text-align:center;margin-top:24px}
+@media(max-width:850px){.sidebar .profile{display:none}}
+@media(max-width:550px){.account-button{padding:7px 8px;font-size:10px;gap:5px}.topbar-right{gap:7px}.login-card{padding:28px 22px}.login-card h1{font-size:23px}.account-summary{padding:17px}.account-summary strong{font-size:15px}}
+
+.auth-tabs{display:flex;border-bottom:1px solid var(--line);gap:22px;margin:20px 0 24px}
+.auth-tabs button{padding:10px 0 13px;color:#87927e;font-size:13px;border-bottom:2px solid transparent}
+.auth-tabs button[aria-pressed=true]{color:var(--green);font-weight:700;border-color:var(--green)}
+.auth-form{display:flex;flex-direction:column;gap:18px}
+.auth-form label{display:flex;flex-direction:column;gap:9px;font-size:12px;color:#64745c}
+.auth-form input{width:100%;height:45px;border:1px solid #dfe6d8;border-radius:7px;background:#fff;padding:11px 13px;color:var(--ink);font-size:12px;min-width:0}
+.auth-form input::placeholder{color:#a0aa98}
+.auth-input{position:relative;display:flex;align-items:center}
+.auth-input svg{position:absolute;left:13px;color:#96a38b;pointer-events:none}
+.auth-input input{padding-left:39px}
+.auth-form .login-action{margin-top:2px}
+.auth-message{padding:13px 15px;border-radius:7px;font-size:11px;line-height:1.9;overflow-wrap:anywhere}
+.auth-message.error{color:#984d3f;background:#fff1ec;border:1px solid #efd9d0}
+.auth-message.success{color:#3d6d4d;background:#f0f6eb;border:1px solid #dbe7d1}
+.auth-message.setup{color:#65765b;background:#f3f7ee;border:1px solid #e0e9d6}
+.auth-message.setup p{margin-top:8px}
+.auth-text-button{display:flex;margin:20px auto 0;font-size:11px;color:#7e8c74;text-decoration:underline;text-underline-offset:3px}
+.account-content .dialog-actions form{margin:0}
