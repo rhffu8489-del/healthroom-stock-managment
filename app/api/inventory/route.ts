@@ -1,6 +1,7 @@
 import { getCurrentUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseConfig } from '@/lib/supabase/config';
+import { isSameOrigin } from '@/lib/request-origin';
 
 export const dynamic = 'force-dynamic';
 const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'private, no-store' } });
@@ -38,7 +39,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  if (request.headers.get('origin') !== new URL(request.url).origin) return json({ error: '허용되지 않은 요청입니다.' }, 403);
+  if (!isSameOrigin(request)) return json({ error: '허용되지 않은 요청입니다.' }, 403);
   if (!getSupabaseConfig()) return json({ error: '데이터 저장소 연결을 준비하고 있습니다.' }, 503);
   const user = await getCurrentUser();
   if (!user) return json({ error: '로그인이 필요합니다.' }, 401);
