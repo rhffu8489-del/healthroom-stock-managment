@@ -1,0 +1,31 @@
+.heading-actions{flex-wrap:wrap;justify-content:flex-end}
+.scan-action{border-color:#b9cdb0;color:var(--green);background:#f2f7ed}
+.barcode-field{display:flex;align-items:center;gap:8px}
+.barcode-field input{flex:1;min-width:0}
+.barcode-field .button{flex-shrink:0;min-height:39px}
+.code-scanner-dialog{width:min(620px,calc(100vw - 24px));max-width:620px;max-height:92svh}
+.scanner-description{color:#7c8b72;font-size:12px;line-height:1.8;margin:18px 0}
+.scanner-view{min-height:225px;position:relative;overflow:hidden;background:#f1f5eb;border:1px solid #dfe8d5;border-radius:10px}
+.scanner-view>div:first-child{min-height:225px;width:100%}
+.scanner-view video{display:block;width:100%;max-height:45svh;object-fit:contain}
+.scanner-placeholder{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:17px;color:#8da17d;pointer-events:none;font-size:11px;background:#f1f5eb}
+.scanner-status{font-size:12px;line-height:1.8;color:#6e805f;margin:14px 0;min-height:22px}
+.scanner-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:16px 0 23px}
+.scanner-actions .button{min-height:43px;padding:10px 8px;font-size:11px}
+.scanner-file{position:relative;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;overflow:hidden}
+.scanner-file input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}
+.scanner-file:focus-within{outline:3px solid #9bc7a8;outline-offset:3px}
+.scanner-file.disabled{opacity:.42;cursor:not-allowed}
+.scanner-file.disabled input{cursor:not-allowed}
+.scanner-code{display:flex;flex-direction:column;gap:9px;font-size:12px;color:#6a7d5d}
+.scanner-code input{height:44px;border:1px solid #dce5d2;border-radius:7px;width:100%;min-width:0;padding:11px 12px;background:white;color:var(--ink);font-size:13px;font-family:ui-monospace,monospace}
+.scanner-code input:disabled{background:#f3f5ef;color:#8b9584}
+.scanner-note{font-size:10px;line-height:1.8;color:#93a184;margin-top:12px}
+.scan-match-code{display:block;padding:13px 15px;background:#f2f6ec;border:1px solid #e0e8d6;border-radius:7px;color:var(--green);overflow-wrap:anywhere;font-size:12px}
+.scan-match-list{display:flex;flex-direction:column;margin:18px 0}
+.scan-match-list>button{display:flex;align-items:center;justify-content:flex-start;width:100%;gap:13px;padding:16px 3px;border-bottom:1px solid var(--line);text-align:left;color:#6f8560}
+.scan-match-list>button>span{flex:1;min-width:0}
+.scan-match-list b{display:block;font-size:12px;overflow-wrap:anywhere}
+.scan-match-list small{display:block;font-size:10px;line-height:1.8;color:#91a180;margin-top:5px}
+.scan-match-list strong{font-size:13px;white-space:nowrap}
+@media(max-width:550px){.heading-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.heading-actions>.scan-action{grid-column:1/-1}.code-scanner-dialog .dialog-inner{padding:22px 16px}.scanner-view,.scanner-view>div:first-child{min-height:190px}.scanner-actions{grid-template-columns:1fr 1fr}.scanner-actions>button{grid-column:1/-1}.scanner-actions .button{font-size:12px;min-height:44px}.scanner-description,.scanner-status{font-size:11px}.scan-match-list>button{gap:8px}.scan-match-panel .dialog-actions{flex-wrap:wrap}.scan-match-panel .dialog-actions .primary{flex:1}.barcode-field .button{min-width:70px}}
