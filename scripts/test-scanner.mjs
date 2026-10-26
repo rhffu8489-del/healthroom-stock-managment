@@ -1,18 +1,21 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import ts from 'typescript';
 
 const require = createRequire(import.meta.url);
 const ZXing = require('html5-qrcode/third_party/zxing-js.umd.js');
 async function loadTS(file) {
-  const source = await readFile(new URL(file, import.meta.url), 'utf8');
+  let source = await readFile(new URL(file, import.meta.url), 'utf8');
+  source = source.replaceAll('html5-qrcode/third_party/zxing-js.umd.js', pathToFileURL(require.resolve('html5-qrcode/third_party/zxing-js.umd.js')).href);
   const { outputText } = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } });
   return import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
 }
-const { CAMERA_PREFERENCE, normalizeBarcode, findBarcodeMatches, cameraErrorMessage } = await loadTS('../lib/barcode.ts');
+const { CAMERA_PREFERENCE, CAMERA_SCAN_CONFIG, normalizeBarcode, findBarcodeMatches, cameraErrorMessage } = await loadTS('../lib/barcode.ts');
 const { ScannerSession } = await loadTS('../lib/scanner-session.ts');
+const { qrFrameSize, decodeQrCanvas, startQrCameraScan } = await loadTS('../lib/qr-camera.ts');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function deferred() { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; }
 
@@ -55,6 +58,12 @@ test('the rear-camera preference is accepted by the shipped camera adapter', () 
   const { Html5Qrcode } = require('html5-qrcode');
   const constraints = Html5Qrcode.prototype.createVideoConstraints(CAMERA_PREFERENCE);
   assert.equal(constraints.facingMode, 'environment');
+  const { VideoConstraintsUtil } = require('html5-qrcode/cjs/utils.js');
+  assert.equal(VideoConstraintsUtil.isMediaStreamConstraintsValid(CAMERA_SCAN_CONFIG.videoConstraints, { logError: assert.fail }), true);
+  assert.equal(CAMERA_SCAN_CONFIG.videoConstraints.width.ideal, 1920);
+  assert.equal(CAMERA_SCAN_CONFIG.videoConstraints.height.ideal, 1080);
+  assert.equal('qrbox' in CAMERA_SCAN_CONFIG, false);
+  assert.equal('aspectRatio' in CAMERA_SCAN_CONFIG, false);
 });
 
 test('opening/closing without starting never loads a decoder or requests a camera', async () => {
@@ -169,4 +178,123 @@ test('the shipped barcode decoder reads an independently generated EAN-13 fixtur
     for (let y = 10; y < height - 10; y++) for (let x = left; x < left + barWidth; x++) pixels[y * width + x] = 0;
   }
   assert.equal(decode(pixels, width, height), fixture.text);
+});
+
+function qrFrame(value, { width = 960, height = 720, left = 240, top = 100, size = 260, inverted = false, rotated = false } = {}) {
+  const matrix = new ZXing.QRCodeWriter().encode(value, ZXing.BarcodeFormat.QR_CODE, size, size, new Map());
+  const pixels = new Uint8ClampedArray(width * height).fill(inverted ? 0 : 255);
+  for (let y = 0; y < matrix.getHeight(); y++) for (let x = 0; x < matrix.getWidth(); x++) {
+    const black = rotated ? matrix.get(y, matrix.getHeight() - 1 - x) : matrix.get(x, y);
+    pixels[(top + y) * width + left + x] = black !== inverted ? 0 : 255;
+  }
+  return { width, height, pixels };
+}
+
+function frameCanvas(frame) {
+  let pixels = frame.pixels;
+  const canvas = { width: frame.width, height: frame.height, draws: 0 };
+  const context = {
+    getImageData() {
+      const data = new Uint8ClampedArray(pixels.length * 4);
+      for (let i = 0; i < pixels.length; i++) {
+        data[i * 4] = data[i * 4 + 1] = data[i * 4 + 2] = pixels[i];
+        data[i * 4 + 3] = 255;
+      }
+      return { data };
+    },
+    drawImage(_video, x, y, width, height) {
+      assert.equal(x, 0); assert.equal(y, 0);
+      assert.equal(width, canvas.width); assert.equal(height, canvas.height);
+      canvas.draws++;
+      pixels = new Uint8ClampedArray(width * height);
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        pixels[y * width + x] = frame.pixels[Math.floor(y * frame.height / height) * frame.width + Math.floor(x * frame.width / width)];
+      }
+    },
+  };
+  canvas.getContext = () => context;
+  return canvas;
+}
+
+test('QR fallback reads full frames with rotated and inverted URL labels', () => {
+  for (const options of [{}, { rotated: true }, { inverted: true }, { rotated: true, inverted: true }]) {
+    const value = 'https://example.test/item/001234?lot=20261026';
+    assert.equal(decodeQrCanvas(frameCanvas(qrFrame(value, options))), value);
+  }
+});
+
+test('a QR outside the old centre box is readable from the full camera frame', () => {
+  const value = '001234567890';
+  const frame = qrFrame(value, { width: 1920, height: 1080, left: 20, top: 20, size: 180 });
+  // Previous qrbox was 90% wide and 75% tall: its top edge cut off this QR.
+  const width = 1728, height = 810;
+  const cropped = new Uint8ClampedArray(width * height);
+  for (let y = 0; y < height; y++) cropped.set(frame.pixels.subarray((y + 135) * frame.width + 96, (y + 135) * frame.width + 96 + width), y * width);
+  assert.throws(() => decode(cropped, width, height));
+  assert.equal(decodeQrCanvas(frameCanvas(frame)), value);
+});
+
+test('camera QR sizing keeps detail above mobile preview resolution with bounded memory', () => {
+  for (const [width, height] of [[1920, 1080], [1080, 1920], [4096, 2160], [640, 480]]) {
+    const size = qrFrameSize(width, height);
+    assert.ok(size.width <= 1600 && size.height <= 1600);
+    assert.ok(size.width * size.height <= 1_250_000);
+    assert.ok(Math.abs(size.width / size.height - width / height) < .01);
+  }
+  assert.ok(qrFrameSize(1920, 1080).width > 1000);
+  assert.deepEqual(qrFrameSize(640, 480), { width: 640, height: 480 });
+  assert.equal(qrFrameSize(0, 0), null);
+});
+
+test('long QR content is decoded intact so registration can explain its length limit', () => {
+  const value = `https://example.test/item?data=${'a'.repeat(150)}`;
+  const actual = decodeQrCanvas(frameCanvas(qrFrame(value, { size: 440 })));
+  assert.equal(actual, value);
+  assert.throws(() => normalizeBarcode(actual), /100자/);
+});
+
+test('live QR fallback reads native frames once and stops scheduling after a result', context => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  const frame = qrFrame('000123', { width: 1920, height: 1080, left: 20, top: 20, size: 180 });
+  const canvas = frameCanvas(frame);
+  const video = { videoWidth: frame.width, videoHeight: frame.height, readyState: 4, paused: false, isConnected: true };
+  const received = [];
+  const stop = startQrCameraScan(video, value => received.push(value), canvas);
+  context.mock.timers.tick(450);
+  assert.deepEqual(received, ['000123']);
+  assert.equal(canvas.draws, 1);
+  assert.equal(canvas.width, 0);
+  context.mock.timers.tick(5000);
+  assert.equal(canvas.draws, 1);
+  stop();
+});
+
+test('closing or detaching a QR camera cancels pending frames and callbacks', context => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  const frame = qrFrame('001234');
+  const video = { videoWidth: frame.width, videoHeight: frame.height, readyState: 4, paused: false, isConnected: true };
+  const canvas = frameCanvas(frame);
+  const stop = startQrCameraScan(video, assert.fail, canvas);
+  stop();
+  context.mock.timers.tick(2000);
+  assert.equal(canvas.draws, 0);
+  const detachedCanvas = frameCanvas(frame);
+  startQrCameraScan({ ...video, isConnected: false }, assert.fail, detachedCanvas);
+  context.mock.timers.tick(450);
+  assert.equal(detachedCanvas.draws, 0);
+  assert.equal(detachedCanvas.width, 0);
+});
+
+test('a QR camera waits for playable video rather than decoding an empty frame', context => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  const frame = qrFrame('001234');
+  const canvas = frameCanvas(frame);
+  const video = { videoWidth: 0, videoHeight: 0, readyState: 0, paused: true, isConnected: true };
+  const received = [];
+  startQrCameraScan(video, value => received.push(value), canvas);
+  context.mock.timers.tick(450);
+  assert.equal(canvas.draws, 0);
+  Object.assign(video, { videoWidth: frame.width, videoHeight: frame.height, readyState: 4, paused: false });
+  context.mock.timers.tick(450);
+  assert.deepEqual(received, ['001234']);
 });

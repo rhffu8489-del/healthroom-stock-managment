@@ -1,5 +1,16 @@
 export const CAMERA_PREFERENCE = { facingMode: 'environment' } as const;
 
+// Omitting qrbox scans the whole preview. These are preferences, so phones that
+// cannot supply 1080p can still open their camera at a supported resolution.
+export const CAMERA_SCAN_CONFIG = {
+  fps: 5,
+  videoConstraints: {
+    facingMode: 'environment',
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+  },
+} as const;
+
 export function normalizeBarcode(value: string): string {
   const code = value.trim();
   if (!code) throw new Error('바코드나 QR 코드값을 입력해 주세요.');

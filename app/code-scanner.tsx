@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type ChangeEvent } from 'react';
 import { Camera, CameraOff, Check, ImagePlus, ScanLine, X } from 'lucide-react';
-import { CAMERA_PREFERENCE, cameraErrorMessage, normalizeBarcode } from '@/lib/barcode';
+import { CAMERA_PREFERENCE, CAMERA_SCAN_CONFIG, cameraErrorMessage, normalizeBarcode } from '@/lib/barcode';
 import { ScannerSession } from '@/lib/scanner-session';
 
 type Props = { open: boolean; onClose: () => void; onDetected: (value: string) => void };
@@ -28,23 +28,28 @@ export default function CodeScanner({ open, onClose, onDetected }: Props) {
     if (!sessionRef.current) {
       const root = readerRef.current;
       sessionRef.current = new ScannerSession(async () => {
-        const { Html5Qrcode, Html5QrcodeSupportedFormats: F } = await import('html5-qrcode');
+        const [{ Html5Qrcode, Html5QrcodeSupportedFormats: F }, { startQrCameraScan }] = await Promise.all([
+          import('html5-qrcode'), import('@/lib/qr-camera'),
+        ]);
         if (!root?.isConnected) throw new Error('Scanner closed');
         const reader = new Html5Qrcode(readerId, {
           verbose: false,
           useBarCodeDetectorIfSupported: false,
           formatsToSupport: [F.QR_CODE, F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.CODE_93, F.ITF, F.CODABAR, F.DATA_MATRIX, F.PDF_417],
         });
+        let stopQrScan: (() => void) | undefined;
+        function stopQr() { stopQrScan?.(); stopQrScan = undefined; }
         return {
           get isScanning() { return reader.isScanning; },
-          start: (decoded) => reader.start(CAMERA_PREFERENCE, {
-            fps: 8,
-            aspectRatio: 4 / 3,
-            qrbox: (width, height) => ({ width: Math.floor(Math.min(width * .9, 500)), height: Math.floor(Math.min(height * .75, 300)) }),
-          }, decoded, () => {}),
-          stop: () => reader.stop(),
+          start: async (decoded) => {
+            stopQr();
+            await reader.start(CAMERA_PREFERENCE, CAMERA_SCAN_CONFIG, decoded, () => {});
+            const video = root.querySelector('video');
+            if (video && reader.isScanning) stopQrScan = startQrCameraScan(video, decoded);
+          },
+          stop: async () => { stopQr(); await reader.stop(); },
           scanFile: (file) => reader.scanFile(file, false),
-          clear: () => reader.clear(),
+          clear: () => { stopQr(); reader.clear(); },
         };
       }, () => {
         root?.querySelectorAll('video').forEach(video => {
@@ -72,6 +77,14 @@ export default function CodeScanner({ open, onClose, onDetected }: Props) {
       void sessionRef.current?.stop();
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open || phase !== 'camera') return;
+    const timer = setTimeout(() => {
+      setMessage('아직 코드를 찾지 못했어요. 코드 전체와 흰 여백이 보이게 하고, 거리를 조금씩 바꿔 주세요. 반사가 있으면 사진 찍기나 사진 선택도 이용할 수 있어요.');
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [open, phase]);
 
   useEffect(() => {
     function pauseCamera() {
@@ -119,7 +132,10 @@ export default function CodeScanner({ open, onClose, onDetected }: Props) {
     try {
       setValue(normalizeBarcode(raw));
       setMessage('코드를 읽었어요. 아래 값을 확인하고 이 코드 사용을 눌러 주세요.');
-    } catch (cause) { setError((cause as Error).message); }
+    } catch (cause) {
+      setError((cause as Error).message);
+      setMessage('QR은 인식했지만 물품 코드로 등록할 수 없는 내용이에요. 100자 이하의 한 줄 식별 코드를 사용해 주세요.');
+    }
     busyRef.current = false;
     setPhase('idle');
   }
@@ -141,7 +157,7 @@ export default function CodeScanner({ open, onClose, onDetected }: Props) {
       const started = await getSession().start(raw => { void capture(raw, generation); });
       if (!current(generation)) return;
       setPhase(started ? 'camera' : 'idle');
-      setMessage('후면 카메라에 코드 전체가 선명하게 들어오도록 비춰 주세요.');
+      setMessage('화면 전체에서 코드를 찾고 있어요. 코드와 주변 여백이 선명하게 보이도록 비춰 주세요.');
     } catch (cause) {
       if (!current(generation)) return;
       liveRef.current = false;
