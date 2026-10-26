@@ -21,6 +21,10 @@
 .scanner-code input{height:44px;border:1px solid #dce5d2;border-radius:7px;width:100%;min-width:0;padding:11px 12px;background:white;color:var(--ink);font-size:13px;font-family:ui-monospace,monospace}
 .scanner-code input:disabled{background:#f3f5ef;color:#8b9584}
 .scanner-note{font-size:10px;line-height:1.8;color:#93a184;margin-top:12px}
+.scanner-metadata{margin-top:14px;padding:15px;background:#f2f6ec;border:1px solid #dfe8d5;border-radius:8px;font-size:12px;color:var(--green)}
+.scanner-metadata dl{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;margin:13px 0}
+.scanner-metadata dt{color:#75866a}.scanner-metadata dd{margin:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.scanner-metadata p{font-size:11px;line-height:1.8;color:#75866a;margin:10px 0 0}
 .scan-match-code{display:block;padding:13px 15px;background:#f2f6ec;border:1px solid #e0e8d6;border-radius:7px;color:var(--green);overflow-wrap:anywhere;font-size:12px}
 .scan-match-list{display:flex;flex-direction:column;margin:18px 0}
 .scan-match-list>button{display:flex;align-items:center;justify-content:flex-start;width:100%;gap:13px;padding:16px 3px;border-bottom:1px solid var(--line);text-align:left;color:#6f8560}

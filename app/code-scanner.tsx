@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type ChangeEvent } from 'react';
 import { Camera, CameraOff, Check, ImagePlus, ScanLine, X } from 'lucide-react';
-import { CAMERA_PREFERENCE, CAMERA_SCAN_CONFIG, cameraErrorMessage, normalizeBarcode } from '@/lib/barcode';
+import { CAMERA_PREFERENCE, CAMERA_SCAN_CONFIG, cameraErrorMessage, normalizeScannedValue, readScannedCode } from '@/lib/barcode';
 import { ScannerSession } from '@/lib/scanner-session';
 
 type Props = { open: boolean; onClose: () => void; onDetected: (value: string) => void };
@@ -23,13 +23,15 @@ export default function CodeScanner({ open, onClose, onDetected }: Props) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('카메라를 켜거나 코드가 보이는 사진을 선택해 주세요.');
   const busy = phase === 'starting' || phase === 'photo' || phase === 'stopping';
+  let details: ReturnType<typeof readScannedCode> | null = null;
+  try { if (value) details = readScannedCode(value); } catch { /* Validate on confirmation. */ }
 
   function getSession() {
     if (!sessionRef.current) {
       const root = readerRef.current;
       sessionRef.current = new ScannerSession(async () => {
-        const [{ Html5Qrcode, Html5QrcodeSupportedFormats: F }, { startQrCameraScan }] = await Promise.all([
-          import('html5-qrcode'), import('@/lib/qr-camera'),
+        const [{ Html5Qrcode, Html5QrcodeSupportedFormats: F }, { startMatrixCameraScan, readMatrixPhoto }] = await Promise.all([
+          import('html5-qrcode'), import('@/lib/matrix-camera'),
         ]);
         if (!root?.isConnected) throw new Error('Scanner closed');
         const reader = new Html5Qrcode(readerId, {
@@ -37,19 +39,26 @@ export default function CodeScanner({ open, onClose, onDetected }: Props) {
           useBarCodeDetectorIfSupported: false,
           formatsToSupport: [F.QR_CODE, F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.CODE_93, F.ITF, F.CODABAR, F.DATA_MATRIX, F.PDF_417],
         });
-        let stopQrScan: (() => void) | undefined;
-        function stopQr() { stopQrScan?.(); stopQrScan = undefined; }
+        let stopMatrixScan: (() => void) | undefined;
+        function stopMatrix() { stopMatrixScan?.(); stopMatrixScan = undefined; }
         return {
           get isScanning() { return reader.isScanning; },
           start: async (decoded) => {
-            stopQr();
+            stopMatrix();
             await reader.start(CAMERA_PREFERENCE, CAMERA_SCAN_CONFIG, decoded, () => {});
             const video = root.querySelector('video');
-            if (video && reader.isScanning) stopQrScan = startQrCameraScan(video, decoded);
+            if (video && reader.isScanning) stopMatrixScan = startMatrixCameraScan(video, decoded);
           },
-          stop: async () => { stopQr(); await reader.stop(); },
-          scanFile: (file) => reader.scanFile(file, false),
-          clear: () => { stopQr(); reader.clear(); },
+          stop: async () => { stopMatrix(); await reader.stop(); },
+          scanFile: async (file) => {
+            try { return await reader.scanFile(file, false); }
+            catch (error) {
+              const value = await readMatrixPhoto(file);
+              if (value !== null) return value;
+              throw error;
+            }
+          },
+          clear: () => { stopMatrix(); reader.clear(); },
         };
       }, () => {
         root?.querySelectorAll('video').forEach(video => {
@@ -81,7 +90,7 @@ export default function CodeScanner({ open, onClose, onDetected }: Props) {
   useEffect(() => {
     if (!open || phase !== 'camera') return;
     const timer = setTimeout(() => {
-      setMessage('아직 코드를 찾지 못했어요. 코드 전체와 흰 여백이 보이게 하고, 거리를 조금씩 바꿔 주세요. 반사가 있으면 사진 찍기나 사진 선택도 이용할 수 있어요.');
+      setMessage('아직 코드를 찾지 못했어요. 코드 전체와 주변 여백이 보이게 하고, 거리를 조금씩 바꿔 주세요. 작은 점으로 인쇄된 코드는 더 가까이 비추거나 사진 선택을 이용해 주세요.');
     }, 8000);
     return () => clearTimeout(timer);
   }, [open, phase]);
@@ -130,11 +139,11 @@ export default function CodeScanner({ open, onClose, onDetected }: Props) {
     await getSession().stop();
     if (!current(generation)) return;
     try {
-      setValue(normalizeBarcode(raw));
+      setValue(normalizeScannedValue(raw));
       setMessage('코드를 읽었어요. 아래 값을 확인하고 이 코드 사용을 눌러 주세요.');
     } catch (cause) {
       setError((cause as Error).message);
-      setMessage('QR은 인식했지만 물품 코드로 등록할 수 없는 내용이에요. 100자 이하의 한 줄 식별 코드를 사용해 주세요.');
+      setMessage('코드는 인식했지만 물품 코드로 등록할 수 없는 내용이에요. 지원하는 GS1 제품 코드 또는 100자 이하의 한 줄 식별 코드를 사용해 주세요.');
     }
     busyRef.current = false;
     setPhase('idle');
@@ -193,7 +202,7 @@ export default function CodeScanner({ open, onClose, onDetected }: Props) {
     try {
       const raw = await getSession().read(file);
       if (!current(generation) || raw === null) return;
-      try { setValue(normalizeBarcode(raw)); }
+      try { setValue(normalizeScannedValue(raw)); }
       catch (cause) { setError((cause as Error).message); setMessage('물품 코드값을 확인하거나 다른 코드를 읽어 주세요.'); return; }
       setMessage('사진에서 코드를 읽었어요. 값을 확인하고 이 코드 사용을 눌러 주세요.');
     } catch {
@@ -209,7 +218,7 @@ export default function CodeScanner({ open, onClose, onDetected }: Props) {
   async function useCode() {
     if (busyRef.current || liveRef.current) return;
     let code: string;
-    try { code = normalizeBarcode(value); } catch (cause) { setError((cause as Error).message); return; }
+    try { code = normalizeScannedValue(value); } catch (cause) { setError((cause as Error).message); return; }
     const generation = ++generationRef.current;
     busyRef.current = true;
     setPhase('stopping');
@@ -222,9 +231,9 @@ export default function CodeScanner({ open, onClose, onDetected }: Props) {
 
   return <dialog ref={dialogRef} className="code-scanner-dialog" aria-labelledby={`scan-title-${id}`} onCancel={event => { event.preventDefault(); close(); }} onClick={event => { if (event.target === event.currentTarget) close(); }}>
     <div className="dialog-inner">
-      <div className="dialog-header"><div><p className="eyebrow">보건실 살림</p><h2 id={`scan-title-${id}`}>바코드 · QR 스캔</h2></div><button type="button" className="icon-button" aria-label="스캔 닫기" onClick={close}><X size={21} /></button></div>
+      <div className="dialog-header"><div><p className="eyebrow">보건실 살림</p><h2 id={`scan-title-${id}`}>바코드 · 2D 코드 스캔</h2></div><button type="button" className="icon-button" aria-label="스캔 닫기" onClick={close}><X size={21} /></button></div>
       <p className="scanner-description">코드를 읽은 다음 물품 정보를 확인하고 등록하세요.</p>
-      <div className="scanner-view"><div id={readerId} ref={readerRef} />{phase !== 'camera' && phase !== 'starting' && <div className="scanner-placeholder"><ScanLine size={45} /><span>바코드와 QR 코드를 읽을 수 있어요</span></div>}</div>
+      <div className="scanner-view"><div id={readerId} ref={readerRef} />{phase !== 'camera' && phase !== 'starting' && <div className="scanner-placeholder"><ScanLine size={45} /><span>바코드 · QR · 데이터 매트릭스</span></div>}</div>
       <p className="scanner-status" role="status" aria-live="polite">{message}</p>
       {error && <p className="auth-message error" role="alert">{error}</p>}
       <div className="scanner-actions">
@@ -233,6 +242,7 @@ export default function CodeScanner({ open, onClose, onDetected }: Props) {
         <label className={`button secondary scanner-file ${busy ? 'disabled' : ''}`}><ImagePlus size={17} />사진 선택<input type="file" accept="image/*" disabled={busy} onChange={event => void readPhoto(event)} aria-label="사진 선택해서 코드 읽기" /></label>
       </div>
       <label className="scanner-code">코드 확인 / 직접 입력<input type="text" value={value} maxLength={100} autoComplete="off" autoCapitalize="none" spellCheck={false} disabled={busy || phase === 'camera'} placeholder="읽은 코드가 여기에 표시됩니다" onChange={event => { setValue(event.target.value); setError(''); }} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void useCode(); } }} /></label>
+      {details?.display && <div className="scanner-metadata"><strong>GS1 제품 정보</strong><dl><dt>제품번호 (GTIN)</dt><dd>{details.barcode}</dd>{details.expiry && <><dt>유효기간</dt><dd>{details.expiry}</dd></>}{details.lot && <><dt>제조번호 (LOT)</dt><dd>{details.lot}</dd></>}{details.productionDate && <><dt>제조일</dt><dd>{details.productionDate}</dd></>}{details.serial && <><dt>일련번호</dt><dd>{details.serial}</dd></>}</dl><p>포장 표기와 비교해 주세요. 제품번호를 코드로 사용하고, 비어 있는 유효기간·메모에만 정보를 채워요. 물품명은 직접 입력해 주세요.</p></div>}
       <p className="scanner-note">사진은 서버에 업로드하지 않고 이 기기에서 읽어요. 코드의 앞자리 0도 그대로 저장합니다.</p>
       <div className="dialog-actions"><button type="button" className="button secondary" onClick={close}>취소</button><button type="button" className="button primary" disabled={busy || phase === 'camera' || !value.trim()} onClick={() => void useCode()}><Check size={16} />이 코드 사용</button></div>
     </div>
