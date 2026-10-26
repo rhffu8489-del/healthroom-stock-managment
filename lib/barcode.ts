@@ -21,6 +21,7 @@ export function normalizeBarcode(value: string): string {
 
 export type ScannedCode = {
   barcode: string;
+  name?: string;
   display?: string;
   expiry?: string;
   productionDate?: string;
@@ -111,14 +112,26 @@ export function normalizeScannedValue(value: string): string {
   return scanned.display || scanned.barcode;
 }
 
-export function applyScannedCode<T extends { barcode: string; expiry: string | null; note: string }>(form: T, scanned: ScannedCode): T {
+export function getProductGtin(value: string): string | null {
+  const code = readScannedCode(value).barcode;
+  // Eight digits may also be compressed UPC-E; without its format metadata,
+  // interpreting that value as EAN-8 could identify a different product.
+  if (!/^(?:\d{12}|\d{13}|\d{14})$/.test(code)) return null;
+  const gtin = code.padStart(14, '0');
+  return validGtin(gtin) ? gtin : null;
+}
+
+export function applyScannedCode<T extends { barcode: string; expiry: string | null; note: string; name?: string }>(form: T, scanned: ScannedCode): T {
   const details = [scanned.lot && `제조번호(LOT): ${scanned.lot}`, scanned.productionDate && `제조일: ${scanned.productionDate}`, scanned.serial && `일련번호: ${scanned.serial}`].filter(Boolean).join('\n');
-  return { ...form, barcode: scanned.barcode, expiry: form.expiry || scanned.expiry || '', note: form.note || details };
+  return { ...form, ...(scanned.name && !form.name ? { name: scanned.name.slice(0, 100) } : {}), barcode: scanned.barcode, expiry: form.expiry || scanned.expiry || '', note: form.note || details };
 }
 
 export function findBarcodeMatches<T extends { barcode: string }>(items: readonly T[], value: string): T[] {
-  const code = readScannedCode(value).barcode;
-  return items.filter(item => (parseGs1(item.barcode)?.barcode || item.barcode.trim()) === code);
+  const code = getProductGtin(value) || readScannedCode(value).barcode;
+  return items.filter(item => {
+    try { return (getProductGtin(item.barcode) || readScannedCode(item.barcode).barcode) === code; }
+    catch { return false; }
+  });
 }
 
 export function cameraErrorMessage(error: unknown): string {

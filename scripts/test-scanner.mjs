@@ -13,7 +13,8 @@ async function loadTS(file) {
   const { outputText } = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } });
   return import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
 }
-const { CAMERA_PREFERENCE, CAMERA_SCAN_CONFIG, normalizeBarcode, normalizeScannedValue, readScannedCode, applyScannedCode, findBarcodeMatches, cameraErrorMessage } = await loadTS('../lib/barcode.ts');
+const { CAMERA_PREFERENCE, CAMERA_SCAN_CONFIG, normalizeBarcode, normalizeScannedValue, readScannedCode, applyScannedCode, findBarcodeMatches, getProductGtin, cameraErrorMessage } = await loadTS('../lib/barcode.ts');
+const { readDeviceProduct, lookupMedicalProduct } = await loadTS('../lib/product-lookup.ts');
 const { ScannerSession } = await loadTS('../lib/scanner-session.ts');
 const { matrixFrameSize, decodeMatrixCanvas, startMatrixCameraScan, readMatrixPhoto } = await loadTS('../lib/matrix-camera.ts');
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -412,4 +413,81 @@ test('photo fallback decodes an inverted dot label and releases its local image 
     if (previousDocument === undefined) delete globalThis.document; else globalThis.document = previousDocument;
     if (previousImage === undefined) delete globalThis.Image; else globalThis.Image = previousImage;
   }
+});
+
+test('only valid GTINs may use product lookup; UPC, EAN and GS1 preserve equivalent product identity', () => {
+  const gtin = '00382903249039';
+  for (const code of [gtin, '0382903249039', '382903249039', dataMatrixFixture.text]) assert.equal(getProductGtin(code), gtin);
+  for (const code of ['00382903249038', '001234', '1234', '96385074', 'https://example.test', 'product-00382903249039']) assert.equal(getProductGtin(code), null);
+  const items = [{ barcode: gtin }, { barcode: '382903249039' }, { barcode: '0382903249039' }, { barcode: '' }, { barcode: '00382903249038' }];
+  assert.deepEqual(findBarcodeMatches(items, dataMatrixFixture.text), items.slice(0, 3));
+});
+
+test('a confirmed name fills a blank name without inheriting old stock expiry or replacing a draft', () => {
+  const scan = { barcode: '00382903249039', name: '내가 등록한 물품' };
+  const blank = { name: '', barcode: '', expiry: '', note: '' };
+  assert.deepEqual(applyScannedCode(blank, scan), { ...blank, name: scan.name, barcode: scan.barcode });
+  assert.equal(applyScannedCode({ ...blank, name: '입력 중인 이름' }, scan).name, '입력 중인 이름');
+  assert.equal(applyScannedCode(blank, { ...scan, name: 'x'.repeat(101) }).name.length, 100);
+});
+
+const productGtin = '08717648200274';
+function productFixture(identifiers = [{ deviceId: productGtin, deviceIdType: 'Primary', deviceIdIssuingAgency: 'GS1' }]) {
+  return { gudid: { device: {
+    identifiers: { identifier: identifiers }, brandName: 'EXAMPLE BRAND', versionModelNumber: 'MODEL-01',
+    companyName: 'Example manufacturer', deviceDescription: 'An example medical device',
+    expirationDate: true, manufacturingDate: true,
+  } } };
+}
+
+test('official device results require an exact GS1 primary/package identifier and expose no batch date', () => {
+  const product = readDeviceProduct(productFixture(), productGtin);
+  assert.equal(product.name, 'EXAMPLE BRAND · MODEL-01');
+  assert.equal(product.manufacturer, 'Example manufacturer');
+  assert.equal(product.sourceUrl, `https://accessgudid.nlm.nih.gov/devices/${productGtin}`);
+  assert.equal('expiry' in product, false);
+  assert.equal('expirationDate' in product, false);
+  assert.equal(readDeviceProduct(productFixture(), '00382903249039'), null);
+  assert.equal(readDeviceProduct(productFixture([{ deviceId: productGtin, deviceIdIssuingAgency: 'HIBCC' }]), productGtin), null);
+  const packageBody = productFixture([
+    { deviceId: productGtin, deviceIdType: 'Primary', deviceIdIssuingAgency: 'GS1' },
+    { deviceId: '00382903249039', deviceIdType: 'Package', deviceIdIssuingAgency: 'GS1' },
+  ]);
+  assert.equal(readDeviceProduct(packageBody, '00382903249039').sourceUrl, `https://accessgudid.nlm.nih.gov/devices/${productGtin}`);
+});
+
+test('incomplete external records fail closed, while a scalar identifier and description-only name work', () => {
+  for (const body of [null, {}, { gudid: null }, { gudid: { device: [] } }]) assert.equal(readDeviceProduct(body, productGtin), null);
+  const body = productFixture({ deviceId: productGtin, deviceIdType: 'Primary', deviceIdIssuingAgency: 'GS1' });
+  body.gudid.device.brandName = null;
+  body.gudid.device.versionModelNumber = null;
+  assert.equal(readDeviceProduct(body, productGtin).name, body.gudid.device.deviceDescription);
+  body.gudid.device.deviceDescription = null;
+  assert.equal(readDeviceProduct(body, productGtin), null);
+});
+
+test('product lookup sends only the public GTIN to the fixed official host and returns verified fields', async () => {
+  let calls = 0;
+  const result = await lookupMedicalProduct(productGtin, async (url, options) => {
+    calls++;
+    assert.equal(url, `https://accessgudid.nlm.nih.gov/api/v3/devices/lookup.json?di=${productGtin}`);
+    assert.equal(options.redirect, 'error');
+    assert.equal(options.cache, 'force-cache');
+    assert.equal(options.next.revalidate, 86400);
+    assert.equal(options.signal.aborted, false);
+    return Response.json(productFixture());
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.status, 'found');
+  assert.equal(result.product.name, 'EXAMPLE BRAND · MODEL-01');
+});
+
+test('product lookup separates no match, database outage, malformed JSON and unsupported codes', async () => {
+  assert.deepEqual(await lookupMedicalProduct(productGtin, async () => new Response('', { status: 404 })), { status: 'not_found' });
+  assert.deepEqual(await lookupMedicalProduct(productGtin, async () => new Response('', { status: 503 })), { status: 'unavailable' });
+  assert.deepEqual(await lookupMedicalProduct(productGtin, async () => { throw new Error('timeout'); }), { status: 'unavailable' });
+  assert.deepEqual(await lookupMedicalProduct(productGtin, async () => new Response('not JSON')), { status: 'unavailable' });
+  assert.deepEqual(await lookupMedicalProduct(productGtin, async () => Response.json(productFixture([]))), { status: 'not_found' });
+  assert.deepEqual(await lookupMedicalProduct('https://example.test', assert.fail), { status: 'unsupported' });
+  assert.deepEqual(await lookupMedicalProduct(dataMatrixFixture.text, assert.fail), { status: 'unsupported' });
 });

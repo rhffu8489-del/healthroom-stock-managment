@@ -26,6 +26,7 @@ assert 'name="email"' in html and 'name="password"' in html
 assert '이메일로 로그인' in html and '회원가입' in html
 assert 'no-store' in headers.get('Cache-Control', '')
 assert request('/api/inventory')[0] == 401
+assert request('/api/products?code=08717648200274')[0] == 401
 assert request('/auth/signout')[0] == 405
 
 for forged in [
@@ -34,6 +35,7 @@ for forged in [
 ]:
     assert request('/', headers=forged)[1] == BASE + '/login'
     assert request('/api/inventory', headers=forged)[0] == 401
+    assert request('/api/products?code=08717648200274', headers=forged)[0] == 401
 
 payload = json.dumps({'action': 'settings', 'warning_days': 14}).encode()
 assert request('/api/inventory', payload, {'Content-Type': 'application/json', 'Origin': 'https://untrusted.example'})[0] == 403

@@ -24,6 +24,8 @@
 .scanner-metadata{margin-top:14px;padding:15px;background:#f2f6ec;border:1px solid #dfe8d5;border-radius:8px;font-size:12px;color:var(--green)}
 .scanner-metadata dl{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;margin:13px 0}
 .scanner-metadata dt{color:#75866a}.scanner-metadata dd{margin:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.scanner-metadata select{max-width:100%;width:100%;padding:7px;background:white;border:1px solid #dfe8d5;border-radius:5px;color:var(--green);font-size:12px}
+.scanner-metadata a{text-decoration:underline;text-underline-offset:3px}.scanner-metadata .text-button{margin-top:10px}
 .scanner-metadata p{font-size:11px;line-height:1.8;color:#75866a;margin:10px 0 0}
 .scan-match-code{display:block;padding:13px 15px;background:#f2f6ec;border:1px solid #e0e8d6;border-radius:7px;color:var(--green);overflow-wrap:anywhere;font-size:12px}
 .scan-match-list{display:flex;flex-direction:column;margin:18px 0}
